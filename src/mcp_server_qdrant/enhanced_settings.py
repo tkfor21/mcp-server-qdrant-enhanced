@@ -115,6 +115,18 @@ class EnhancedEmbeddingProviderSettings(BaseSettings):
         validation_alias="CUSTOM_MODEL_CONFIGS",
     )
 
+    # Ollama offload (EMBEDDING_PROVIDER=ollama): where inference runs and
+    # which embedding model to ask for. Lets a CPU-only container delegate
+    # embedding to a GPU host's Ollama.
+    ollama_url: str = Field(
+        default="http://localhost:11434",
+        validation_alias="OLLAMA_URL",
+    )
+    ollama_model: str = Field(
+        default="nomic-embed-text",
+        validation_alias="OLLAMA_EMBED_MODEL",
+    )
+
     @field_validator("collection_model_mappings", "custom_model_configs")
     @classmethod
     def parse_json_fields(cls, v: str) -> str:

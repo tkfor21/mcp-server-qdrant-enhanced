@@ -897,6 +897,7 @@ version = "0.7.1"
 source = { editable = "." }
 dependencies = [
     { name = "fastembed" },
+    { name = "httpx" },
     { name = "mcp", extra = ["cli"] },
     { name = "pydantic" },
     { name = "pydantic-settings" },
@@ -917,6 +918,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastembed", specifier = ">=0.6.0" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "mcp", extras = ["cli"], specifier = ">=1.15.0" },
     { name = "pydantic", specifier = ">=2.10.6" },
     { name = "pydantic-settings", specifier = ">=2.8.0" },

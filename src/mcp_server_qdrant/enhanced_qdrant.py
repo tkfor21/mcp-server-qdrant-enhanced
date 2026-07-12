@@ -10,6 +10,8 @@ from typing import Any, Dict, Optional, List
 from pydantic import BaseModel, field_validator
 from qdrant_client import AsyncQdrantClient, models
 from mcp_server_qdrant.embeddings.enhanced_fastembed import EnhancedFastEmbedProvider
+from mcp_server_qdrant.embeddings.ollama import OllamaEmbeddingProvider
+from mcp_server_qdrant.embeddings.types import EmbeddingProviderType
 from mcp_server_qdrant.enhanced_settings import (
     EnhancedEmbeddingProviderSettings,
     EnhancedQdrantSettings,
@@ -96,11 +98,17 @@ class EnhancedQdrantConnector:
         self._embedding_settings = embedding_settings
         self._default_collection_name = default_collection_name
 
-        # Create enhanced embedding provider
-        self._embedding_provider = EnhancedFastEmbedProvider(
-            embedding_settings=embedding_settings,
-            default_model=embedding_settings.model_name,
-        )
+        # Create the embedding provider (EMBEDDING_PROVIDER routes: ollama
+        # delegates inference to an Ollama host; default stays FastEmbed).
+        if embedding_settings.provider_type == EmbeddingProviderType.OLLAMA:
+            self._embedding_provider = OllamaEmbeddingProvider(
+                embedding_settings=embedding_settings,
+            )
+        else:
+            self._embedding_provider = EnhancedFastEmbedProvider(
+                embedding_settings=embedding_settings,
+                default_model=embedding_settings.model_name,
+            )
 
         try:
             # print(f"[DEBUG] enhanced_qdrant.py: Creating AsyncQdrantClient", file=sys.stderr)
