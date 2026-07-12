@@ -39,12 +39,12 @@ start: ## Start the enhanced MCP server (uses existing deploy.sh)
 	@if [ -f "deploy.sh" ]; then \
 		./deploy.sh; \
 	else \
-		docker-compose -f docker-compose.enhanced.yml up -d; \
+		docker-compose -f docker-compose.yml up -d; \
 	fi
 
 stop: ## Stop the enhanced MCP server
 	@echo "Stopping Enhanced Qdrant MCP Server..."
-	@docker-compose -f docker-compose.enhanced.yml down
+	@docker-compose -f docker-compose.yml down
 
 restart: stop start ## Restart the enhanced MCP server
 
@@ -56,7 +56,7 @@ shell: ## Open shell in running container
 	@./scripts/dev/dev.sh shell
 
 logs: ## Show container logs (follow mode)
-	@docker-compose -f docker-compose.enhanced.yml logs -f
+	@docker-compose -f docker-compose.yml logs -f
 
 status: ## Show container status
 	@./scripts/dev/dev.sh status
@@ -64,11 +64,11 @@ status: ## Show container status
 # Building
 build: ## Build Docker image
 	@echo "Building Docker image..."
-	@docker build -f Dockerfile.enhanced -t triepod-ai/mcp-server-qdrant-enhanced .
+	@docker build -f Dockerfile -t triepod-ai/mcp-server-qdrant-enhanced .
 
 rebuild: ## Force rebuild Docker image (no cache)
 	@echo "Force rebuilding Docker image..."
-	@docker build --no-cache -f Dockerfile.enhanced -t triepod-ai/mcp-server-qdrant-enhanced .
+	@docker build --no-cache -f Dockerfile -t triepod-ai/mcp-server-qdrant-enhanced .
 
 # Testing and Quality
 test: ## Run tests and validation
@@ -137,10 +137,10 @@ check-workflow: ## Verify existing workflow is preserved
 	else \
 		echo "❌ deploy.sh not found"; \
 	fi
-	@if [ -f "docker-compose.enhanced.yml" ]; then \
-		echo "✅ docker-compose.enhanced.yml preserved"; \
+	@if [ -f "docker-compose.yml" ]; then \
+		echo "✅ docker-compose.yml preserved"; \
 	else \
-		echo "❌ docker-compose.enhanced.yml not found"; \
+		echo "❌ docker-compose.yml not found"; \
 	fi
 	@if [ -f "$(HOME)/run-qdrant-docker-mcp.sh" ]; then \
 		echo "✅ Wrapper script preserved"; \

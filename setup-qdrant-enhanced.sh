@@ -16,8 +16,11 @@ BOLD='\033[1m'
 NC='\033[0m' # No Color
 
 # Configuration
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PACKAGE_NAME="@triepod-ai/mcp-server-qdrant-enhanced"
-DOCKER_IMAGE="ghcr.io/triepod-ai/mcp-server-qdrant-enhanced"
+# Local image tag built from source (the golden path is build-from-source; no
+# prebuilt registry image is pulled — see install_docker_method).
+DOCKER_IMAGE="mcp-server-qdrant-enhanced"
 REQUIRED_PYTHON_VERSION="3.10"
 REQUIRED_NODE_VERSION="18"
 
@@ -211,57 +214,25 @@ install_docker_method() {
         return 1
     fi
     
-    # Pull the image
-    log_info "Pulling Docker image $DOCKER_IMAGE..."
-    if docker pull "$DOCKER_IMAGE:latest"; then
-        log_success "Docker image pulled successfully"
+    # Build the image from source so it matches this checkout (deps pinned via
+    # uv.lock). No prebuilt registry image is pulled — build-from-source is the
+    # golden path.
+    log_info "Building Docker image $DOCKER_IMAGE:latest from source (may take a few minutes)..."
+    if docker build -t "$DOCKER_IMAGE:latest" "$SCRIPT_DIR"; then
+        log_success "Docker image built successfully"
     else
-        log_error "Failed to pull Docker image"
+        log_error "Failed to build Docker image"
         return 1
     fi
-    
-    # Create a simple docker-compose setup
-    create_docker_compose_config
-    
+
+    log_info "To run the server as a persistent HTTP service (:10650) alongside a"
+    log_info "local Qdrant, use the committed compose file:  docker compose up -d"
     return 0
 }
 
-create_docker_compose_config() {
-    log_info "Creating Docker Compose configuration..."
-    
-    cat > docker-compose.yml << EOF
-version: '3.8'
-
-services:
-  mcp-server-enhanced:
-    image: $DOCKER_IMAGE:latest
-    container_name: mcp-server-qdrant-enhanced
-    stdin_open: true
-    tty: true
-    network_mode: host
-    environment:
-      - QDRANT_URL=$QDRANT_URL
-      - COLLECTION_NAME=$COLLECTION_NAME
-      - QDRANT_AUTO_CREATE_COLLECTIONS=true
-      - QDRANT_ENABLE_QUANTIZATION=true
-      - QDRANT_HNSW_EF_CONSTRUCT=200
-      - QDRANT_HNSW_M=16
-      - EMBEDDING_PROVIDER=fastembed
-      - EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
-      - PYTHONUNBUFFERED=1
-    volumes:
-      - ./logs:/app/logs:rw
-    restart: unless-stopped
-EOF
-    
-    cat > .env << EOF
-QDRANT_URL=$QDRANT_URL
-COLLECTION_NAME=$COLLECTION_NAME
-EOF
-    
-    log_success "Docker Compose configuration created"
-    log_info "You can start the service with: docker-compose up -d"
-}
+# The repo ships a golden docker-compose.yml (Qdrant + server, build-from-source).
+# Setup no longer generates or overwrites it — run the service with:
+#   docker compose up -d
 
 # Configuration generation
 generate_claude_desktop_config() {
@@ -296,6 +267,7 @@ EOF
         "--rm",
         "-i",
         "--network", "host",
+        "-e", "MCP_TRANSPORT=stdio",
         "-e", "QDRANT_URL=$QDRANT_URL",
         "-e", "COLLECTION_NAME=$COLLECTION_NAME",
         "$DOCKER_IMAGE:latest"
@@ -344,6 +316,7 @@ EOF
           "--rm",
           "-i",
           "--network", "host",
+          "-e", "MCP_TRANSPORT=stdio",
           "-e", "QDRANT_URL=$QDRANT_URL",
           "-e", "COLLECTION_NAME=$COLLECTION_NAME",
           "$DOCKER_IMAGE:latest"

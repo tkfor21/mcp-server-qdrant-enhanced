@@ -30,7 +30,7 @@ This guide consolidates common issues and solutions for the Enhanced Qdrant MCP 
 FROM nvidia/cuda:12.x-devel-ubuntu22.04
 ```
 
-**Files affected:** `Dockerfile.enhanced.cuda`, `Dockerfile.enhanced.http`
+**Files affected:** `Dockerfile.gpu` (the GPU image; `Dockerfile` is CPU-only)
 
 ---
 
@@ -222,7 +222,7 @@ docker exec mcp-server-qdrant-enhanced nvidia-smi
 
 ## Getting Help
 
-1. **Check logs:** `docker-compose -f docker-compose.enhanced.yml logs -f`
+1. **Check logs:** `docker-compose -f docker-compose.yml logs -f`
 2. **Run tests:** `make test` or `./dev quick-test`
 3. **HTTP testing:** `./scripts/test-mcp-http.sh`
 4. **Full validation:** See [VALIDATION_REPORT.md](../VALIDATION_REPORT.md)

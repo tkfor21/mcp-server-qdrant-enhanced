@@ -176,7 +176,7 @@ The `tests/archive/` directory contains historical tests that have been supersed
 Most integration tests require the Enhanced Qdrant MCP Server container to be running:
 
 ```bash
-docker-compose -f docker-compose.enhanced.yml up -d
+docker-compose -f docker-compose.yml up -d
 ```
 
 ### Python Dependencies
@@ -261,6 +261,6 @@ python scripts/utilities/collection_inspector.py --mode list
 
 For issues or questions about the test suite:
 - Check test output for detailed error messages
-- Review container logs: `docker-compose -f docker-compose.enhanced.yml logs -f`
+- Review container logs: `docker-compose -f docker-compose.yml logs -f`
 - Verify Qdrant connectivity: `curl http://localhost:6333/collections`
 - Check GPU availability: `nvidia-smi` (for GPU tests)

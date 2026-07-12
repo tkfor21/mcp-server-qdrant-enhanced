@@ -11,6 +11,49 @@
 
 > ⚠️ **Disclaimer**: This is a community-maintained enhancement by [triepod-ai](https://github.com/triepod-ai), not an official Qdrant product. For the official MCP server, see [modelcontextprotocol/mcp-server-qdrant](https://github.com/modelcontextprotocol/servers/tree/main/src/qdrant). This project is not affiliated with, endorsed by, or sponsored by Qdrant.
 
+## 🚀 Golden Path
+
+The one supported way to build, run, and test. (The detailed sections further down are reference material; this is the source of truth.)
+
+### Run locally (CPU)
+```bash
+docker compose up --build     # Qdrant on :6333 + the MCP server on :10650
+```
+MCP endpoint: `http://localhost:10650/mcp` (streamable HTTP). Point your MCP client there.
+
+### The two images
+| Image | File | When |
+|---|---|---|
+| **CPU** (default) | `Dockerfile` | local dev, CPU hosts |
+| **GPU** (CUDA) | `Dockerfile.gpu` | GPU host only — `nvidia/cuda:12.x-devel` + nightly `onnxruntime-gpu`, run with `--gpus all` (see `docs/TROUBLESHOOTING.md`) |
+
+Both install the **exact pinned deps from `uv.lock`** (`uv sync --frozen`) — the image matches what's tested. One image, transport selected by env: `MCP_TRANSPORT=http` (default) or `stdio`.
+
+### Configuration (env)
+| var | default | purpose |
+|---|---|---|
+| `QDRANT_URL` | — | Qdrant backend, e.g. `http://qdrant:6333` |
+| `QDRANT_API_KEY` | — | Qdrant auth, if any |
+| `MCP_TRANSPORT` | `http` | `http` or `stdio` |
+| `MCP_HOST` / `MCP_PORT` | `0.0.0.0` / `10650` | HTTP bind |
+| `MCP_ALLOWED_HOSTS` | — | extra allow-listed `Host` values, comma-separated (e.g. `10.0.0.225:*`) |
+| `FASTEMBED_CUDA` | `false` | set `true` on the GPU image |
+
+### Develop & test (no Docker)
+```bash
+uv sync                 # locked deps + dev tools
+uv run pytest           # unit + integration (in-memory Qdrant)
+# MCP HTTP round-trip against a running server:
+MCP_URL=http://localhost:10650/mcp uv run python scripts/roundtrip_smoke.py
+```
+
+### The files that matter
+- `src/mcp_server_qdrant/mcp_server.py` — **the** server (`QdrantMCPServer`, 9 tools)
+- `enhanced_qdrant.py` · `enhanced_settings.py` · `embeddings/enhanced_fastembed.py` — connector, collection→model routing, embeddings
+- `Dockerfile` · `Dockerfile.gpu` · `docker-compose.yml` — the only build/run artifacts
+
+---
+
 ## 🌟 Why This Enhanced Version?
 
 This fork transforms the basic MCP server into a **production-ready solution** with:
@@ -285,8 +328,8 @@ docker run -it --rm \
   ghcr.io/triepod-ai/mcp-server-qdrant-enhanced:latest
 
 # Or use Docker Compose for persistent setup
-curl -sSL https://raw.githubusercontent.com/triepod-ai/mcp-server-qdrant-enhanced/main/docker-compose.enhanced.yml -o docker-compose.yml
-docker-compose -f docker-compose.enhanced.yml up -d
+curl -sSL https://raw.githubusercontent.com/triepod-ai/mcp-server-qdrant-enhanced/main/docker-compose.yml -o docker-compose.yml
+docker-compose -f docker-compose.yml up -d
 ```
 
 **Requirements:**
@@ -376,7 +419,7 @@ The Enhanced Qdrant MCP Server supports two transport modes for different use ca
 
 ```bash
 # Using Docker with GPU acceleration (recommended)
-docker-compose -f docker-compose.enhanced.yml up -d mcp-server-enhanced
+docker-compose -f docker-compose.yml up -d mcp-server
 
 # Or run directly
 docker run -i --rm --gpus all --network host \
@@ -410,7 +453,7 @@ docker run -i --rm --gpus all --network host \
 
 ```bash
 # Using Docker with HTTP transport
-docker-compose -f docker-compose.enhanced.yml up -d mcp-server-qdrant-http
+docker-compose -f docker-compose.yml up -d mcp-server
 ```
 
 **MCP Inspector Connection**:
@@ -444,7 +487,7 @@ Both transports can run simultaneously in separate containers:
 
 ```bash
 # Start both STDIO and HTTP containers
-docker-compose -f docker-compose.enhanced.yml up -d
+docker-compose -f docker-compose.yml up -d
 
 # Verify both are running
 docker ps --filter name=mcp-server-qdrant

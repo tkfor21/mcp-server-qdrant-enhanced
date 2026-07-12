@@ -1,0 +1,33 @@
+# Self-contained local stack: Qdrant + the (CPU) MCP server.
+#   docker compose up --build       # http on :10650, qdrant on :6333
+# For the GPU host, switch the mcp-server build to Dockerfile.gpu and add an
+# NVIDIA device reservation (see docs/TROUBLESHOOTING.md).
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    restart: unless-stopped
+
+  mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile        # GPU host: Dockerfile.gpu
+    depends_on:
+      - qdrant
+    ports:
+      - "10650:10650"
+    environment:
+      - QDRANT_URL=http://qdrant:6333
+      - MCP_TRANSPORT=http
+      - MCP_ALLOWED_HOSTS=${MCP_ALLOWED_HOSTS:-}
+      - FASTEMBED_CUDA=false        # GPU host: true
+      - QDRANT_AUTO_CREATE_COLLECTIONS=true
+      - QDRANT_ENABLE_QUANTIZATION=true
+    restart: unless-stopped
+
+volumes:
+  qdrant_storage:

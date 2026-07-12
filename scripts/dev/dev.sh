@@ -53,7 +53,7 @@ show_help() {
     echo "  help            Show this help message"
     echo
     echo "Examples:"
-    echo "  $0 start         # Start using existing docker-compose.enhanced.yml"
+    echo "  $0 start         # Start using existing docker-compose.yml"
     echo "  $0 dev-mode      # Start with live code reloading"
     echo "  $0 quick-test    # Test MCP tools quickly"
     echo
@@ -76,7 +76,7 @@ start_server() {
         ./deploy.sh
     else
         log_info "Using docker-compose directly"
-        docker-compose -f docker-compose.enhanced.yml up -d
+        docker-compose -f docker-compose.yml up -d
     fi
     
     log_success "Server started successfully"
@@ -85,7 +85,7 @@ start_server() {
 stop_server() {
     log_info "Stopping Enhanced Qdrant MCP Server..."
     
-    if docker-compose -f docker-compose.enhanced.yml down; then
+    if docker-compose -f docker-compose.yml down; then
         log_success "Server stopped successfully"
     else
         log_warning "No server was running"
@@ -102,7 +102,7 @@ restart_server() {
 build_image() {
     log_info "Building Docker image..."
     
-    if docker build -f Dockerfile.enhanced -t triepod-ai/mcp-server-qdrant-enhanced .; then
+    if docker build -f Dockerfile -t triepod-ai/mcp-server-qdrant-enhanced .; then
         log_success "Docker image built successfully"
     else
         log_error "Docker build failed"
@@ -113,7 +113,7 @@ build_image() {
 rebuild_image() {
     log_info "Force rebuilding Docker image (no cache)..."
     
-    if docker build --no-cache -f Dockerfile.enhanced -t triepod-ai/mcp-server-qdrant-enhanced .; then
+    if docker build --no-cache -f Dockerfile -t triepod-ai/mcp-server-qdrant-enhanced .; then
         log_success "Docker image rebuilt successfully"
     else
         log_error "Docker rebuild failed"
@@ -123,7 +123,7 @@ rebuild_image() {
 
 show_logs() {
     log_info "Showing container logs..."
-    docker-compose -f docker-compose.enhanced.yml logs -f
+    docker-compose -f docker-compose.yml logs -f
 }
 
 run_tests() {
@@ -181,7 +181,7 @@ clean_containers() {
     log_info "Cleaning up containers and images..."
     
     # Stop containers
-    docker-compose -f docker-compose.enhanced.yml down || true
+    docker-compose -f docker-compose.yml down || true
     
     # Remove containers
     docker rm -f mcp-server-qdrant-enhanced 2>/dev/null || true
@@ -211,7 +211,7 @@ show_status() {
     
     # Show docker-compose status
     log_info "Docker Compose status:"
-    docker-compose -f docker-compose.enhanced.yml ps
+    docker-compose -f docker-compose.yml ps
 }
 
 open_shell() {
@@ -236,7 +236,7 @@ services:
   mcp-server-enhanced:
     build: 
       context: .
-      dockerfile: Dockerfile.enhanced
+      dockerfile: Dockerfile
       target: development
     volumes:
       - ./src:/app/src:ro
@@ -250,7 +250,7 @@ services:
 EOF
     
     log_info "Starting development container with live reloading..."
-    docker-compose -f docker-compose.enhanced.yml -f docker-compose.dev.yml up -d
+    docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d
     
     log_success "Development mode started. Code changes will be reflected immediately."
     log_info "View logs with: $0 logs"

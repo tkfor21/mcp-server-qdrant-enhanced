@@ -32,7 +32,6 @@ dev = [
 packages = ["src/mcp_server_qdrant"]
 
 [project.scripts]
-mcp-server-qdrant = "mcp_server_qdrant.main:main"
 mcp-server-qdrant-enhanced = "mcp_server_qdrant.enhanced_main:main"
 mcp-server-qdrant-http = "mcp_server_qdrant.enhanced_http_main:main"
 

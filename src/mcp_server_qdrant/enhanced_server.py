@@ -2,6 +2,7 @@
 Enhanced server entry point with collection-specific embedding models.
 """
 
+import os
 import sys
 from mcp_server_qdrant.mcp_server import QdrantMCPServer
 from mcp_server_qdrant.enhanced_settings import (
@@ -28,24 +29,18 @@ try:
     # print(f"[DEBUG] enhanced_server.py:   provider_type={embedding_settings.provider_type}", file=sys.stderr)
     # print(f"[DEBUG] enhanced_server.py:   model_name={embedding_settings.model_name}", file=sys.stderr)
 
-    # Configure transport security to allow IP-based access
+    # Transport security allow-list is env-configurable so the server is not
+    # hardwired to a single host. Defaults cover local use; add the deploy
+    # host(s) via MCP_ALLOWED_HOSTS / MCP_ALLOWED_ORIGINS (comma-separated),
+    # e.g. MCP_ALLOWED_HOSTS="10.0.0.225:*".
+    _default_hosts = ["localhost:*", "127.0.0.1:*", "[::1]:*"]
+    _default_origins = ["http://localhost:*", "http://127.0.0.1:*", "http://[::1]:*"]
+    _extra_hosts = [h.strip() for h in os.getenv("MCP_ALLOWED_HOSTS", "").split(",") if h.strip()]
+    _extra_origins = [o.strip() for o in os.getenv("MCP_ALLOWED_ORIGINS", "").split(",") if o.strip()]
     transport_security = TransportSecuritySettings(
         enable_dns_rebinding_protection=True,
-        allowed_hosts=[
-            "localhost:10650",
-            "127.0.0.1:10650",
-            "10.0.0.225:10650",
-            "localhost:*",
-            "127.0.0.1:*",
-            "10.0.0.225:*",
-            "[::1]:*",
-        ],
-        allowed_origins=[
-            "http://localhost:*",
-            "http://127.0.0.1:*",
-            "http://10.0.0.225:*",
-            "http://[::1]:*",
-        ],
+        allowed_hosts=_default_hosts + _extra_hosts,
+        allowed_origins=_default_origins + _extra_origins,
     )
 
     # print("[DEBUG] enhanced_server.py: Creating EnhancedQdrantMCPServer instance", file=sys.stderr)

@@ -224,7 +224,7 @@ build_container() {
     
     log_info "Building Docker image: ${image_name}:${tag}"
     
-    if docker build -f Dockerfile.enhanced -t "${image_name}:${tag}" .; then
+    if docker build -f Dockerfile -t "${image_name}:${tag}" .; then
         log_success "Container image built successfully: ${image_name}:${tag}"
         
         # Create docker run script
@@ -328,7 +328,7 @@ show_deployment_summary() {
     echo "  • run-enhanced-mcp-qdrant.sh (wrapper script)"
     echo "  • .env.enhanced (environment config)"
     echo "  • claude-mcp-config.json (Claude integration)"
-    echo "  • Dockerfile.enhanced (container definition)"
+    echo "  • Dockerfile (container definition)"
     echo "  • run-enhanced-container.sh (container runner)"
     echo "  • claude-mcp-config-container.json (container Claude config)"
     echo

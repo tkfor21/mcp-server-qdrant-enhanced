@@ -1,0 +1,57 @@
+# Golden-path image: GPU (CUDA). Build/validate ON A GPU HOST — this cannot be
+# built or tested on a CPU-only machine (no NVIDIA runtime).
+#
+# Requirements (see docs/TROUBLESHOOTING.md):
+#   - NVIDIA GPU + `--gpus all` + nvidia container runtime
+#   - CUDA 12.x + cuDNN 9.x  (the *devel* base is required for cuBLAS dev libs)
+#   - onnxruntime-gpu from the ORT nightly index — stable PyPI onnxruntime-gpu
+#     does NOT support CUDA 12.x.
+# Match the base-image tag to the host driver/CUDA version before building.
+FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
+
+WORKDIR /app
+RUN apt-get update && \
+    apt-get install -y python3 python3-pip python3-venv && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir uv
+
+# Locked dependencies only (same lockfile as the CPU image → identical versions,
+# except onnxruntime which is swapped for the CUDA build below).
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
+
+ENV VIRTUAL_ENV=/app/.venv
+ENV PATH="/app/.venv/bin:${PATH}"
+
+# Swap the CPU onnxruntime (from the lock) for the CUDA-12 nightly GPU build.
+RUN uv pip uninstall onnxruntime || true && \
+    uv pip install --pre \
+      --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/ORT-Nightly/pypi/simple/ \
+      onnxruntime-gpu
+
+# Pre-download embedding models (CPU provider is fine at build time).
+RUN python -c "\
+from fastembed import TextEmbedding; \
+models=['BAAI/bge-large-en-v1.5','BAAI/bge-base-en-v1.5','BAAI/bge-base-en','sentence-transformers/all-MiniLM-L6-v2']; \
+[TextEmbedding(m, providers=['CPUExecutionProvider']) for m in models]; \
+print('pre-downloaded', len(models), 'models')"
+
+# Application source (runs via PYTHONPATH; the project wheel is not built).
+COPY src ./src
+ENV PYTHONPATH=/app/src
+COPY bin/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+# FASTEMBED_CUDA=true selects CUDAExecutionProvider (falls back to CPU on failure).
+ENV MCP_TRANSPORT=http \
+    MCP_HOST=0.0.0.0 \
+    MCP_PORT=10650 \
+    FASTEMBED_CUDA=true \
+    QDRANT_AUTO_CREATE_COLLECTIONS=true \
+    QDRANT_ENABLE_QUANTIZATION=true \
+    QDRANT_HNSW_EF_CONSTRUCT=200 \
+    QDRANT_HNSW_M=16 \
+    PYTHONUNBUFFERED=1
+
+EXPOSE 10650
+ENTRYPOINT ["/app/entrypoint.sh"]

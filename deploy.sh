@@ -23,7 +23,7 @@ cd "${PROJECT_DIR}"
 
 # Stop current container
 echo -e "${BLUE}⏹️  Stopping current MCP server container...${NC}"
-if docker-compose -f docker-compose.enhanced.yml down; then
+if docker-compose -f docker-compose.yml down; then
     echo -e "${GREEN}✅ Container stopped successfully${NC}"
 else
     echo -e "${YELLOW}⚠️  No container was running${NC}"
@@ -31,7 +31,7 @@ fi
 
 # Start enhanced container
 echo -e "${BLUE}🔄 Starting enhanced MCP server container...${NC}"
-if docker-compose -f docker-compose.enhanced.yml up -d; then
+if docker-compose -f docker-compose.yml up -d; then
     echo -e "${GREEN}✅ Enhanced MCP server started successfully${NC}"
 else
     echo -e "${RED}❌ Failed to start container${NC}"

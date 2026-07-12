@@ -53,9 +53,9 @@ make build             # Build Docker image
 make rebuild           # Force rebuild (no cache)
 
 # Container operations
-docker-compose -f docker-compose.enhanced.yml up -d    # Start enhanced container
-docker-compose -f docker-compose.enhanced.yml down     # Stop container
-docker-compose -f docker-compose.enhanced.yml logs -f  # Follow logs
+docker-compose -f docker-compose.yml up -d    # Start enhanced container
+docker-compose -f docker-compose.yml down     # Stop container
+docker-compose -f docker-compose.yml logs -f  # Follow logs
 
 # Development utilities
 make shell             # Open shell in running container
@@ -99,10 +99,12 @@ src/mcp_server_qdrant/
 ├── enhanced_http_app.py        # HTTP transport ASGI module
 └── enhanced_http_main.py       # Alternative HTTP entry point
 
-Dockerfile.enhanced.cuda        # STDIO container
-Dockerfile.enhanced.http        # HTTP container
-docker-compose.enhanced.yml     # Orchestrates both containers
+Dockerfile                      # CPU image (default); MCP_TRANSPORT=http|stdio
+Dockerfile.gpu                  # GPU/CUDA image (build on a GPU host)
+docker-compose.yml              # Qdrant + MCP server (CPU) local stack
 ```
+
+> **Build/run/test: see the "🚀 Golden Path" section at the top of README.md — the single source of truth.**
 
 **Critical Implementation Note**:
 The HTTP transport uses `mcp.streamable_http_app()` NOT `mcp.sse_app()`. These are different MCP transports:
@@ -187,7 +189,7 @@ QDRANT_HNSW_M=16
 ```
 
 ### Docker Compose Strategy
-The project uses `docker-compose.enhanced.yml` with:
+The project uses `docker-compose.yml` with:
 - **GPU Runtime**: NVIDIA runtime with device reservations for CUDA 12.x
 - **Host Networking**: Direct Qdrant connection on localhost:6333
 - **Volume Mounting**: Persistent logs in `./logs/`
@@ -206,7 +208,7 @@ The project uses `docker-compose.enhanced.yml` with:
 - `./dev` - Unified development entry point script
 - `Makefile` - Comprehensive development commands while preserving existing workflow
 - `deploy.sh` - Quick deployment script (preserved from original workflow)
-- `docker-compose.enhanced.yml` - Production container configuration
+- `docker-compose.yml` - Production container configuration
 
 ### Configuration & Templates
 - `package.json` - NPM package metadata with enhanced features documentation
