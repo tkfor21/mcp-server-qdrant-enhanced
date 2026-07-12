@@ -6,6 +6,7 @@ for ensuring data integrity and type safety throughout the application.
 """
 
 import logging
+import uuid
 from typing import Any, Dict, TypeGuard, List
 
 logger = logging.getLogger(__name__)
@@ -115,6 +116,28 @@ def filter_allowed_collections(
 ) -> List[str]:
     """Filter collection names to those the prefix allowlist admits."""
     return [n for n in names if is_collection_allowed(n, allowed_prefixes)]
+
+
+def is_valid_point_id(value: Any) -> TypeGuard[str]:
+    """
+    Validate a CLIENT-SUPPLIED point ID: canonical lowercase hyphenated UUID
+    form ONLY (`str(uuid.UUID(...))`), rejected otherwise.
+
+    Strict-accept is deliberate: Qdrant's local (:memory:) mode keys points by
+    the RAW string while the real server keys by the parsed UUID value — the
+    only form that is byte-identical on both backends is the one the client
+    uses consistently. uuid.UUID() also parses hex/urn:/braced/uppercase
+    variants, but storing those verbatim makes the point unretrievable by the
+    canonical form in local mode (and vice versa), so a caller could store an
+    ID it cannot read back. Rejecting non-canonical forms loudly (instead of
+    silently normalizing) means the stored ID always equals the ID the caller
+    holds. Non-string inputs (None/int/UUID objects) are rejected by the
+    isinstance guard before uuid.UUID ever runs.
+    """
+    try:
+        return isinstance(value, str) and str(uuid.UUID(value)) == value
+    except ValueError:
+        return False
 
 
 def validate_search_results(results: List[Any]) -> List[Any]:

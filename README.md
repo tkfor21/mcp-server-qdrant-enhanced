@@ -40,6 +40,8 @@ Both install the **exact pinned deps from `uv.lock`** (`uv sync --frozen`) — t
 | `FASTEMBED_CUDA` | `false` | set `true` on the GPU image |
 | `QDRANT_ALLOWED_COLLECTION_PREFIXES` | — | collection-name prefix allowlist (comma-separated, e.g. `mld_`) for a dedicated locked endpoint; unset/empty/separators-only = disabled. Supply at deploy time for the dedicated endpoint only — deliberately NOT threaded through the shared compose |
 
+`qdrant_store`/`qdrant_bulk_store` also accept optional client-supplied point IDs (tool args, not env) — see `docs/TOOL_DESCRIPTIONS.md` → "Client-supplied point IDs".
+
 ### Develop & test (no Docker)
 ```bash
 uv sync                 # locked deps + dev tools

@@ -155,9 +155,20 @@ class EnhancedQdrantConnector:
         response = await self._client.get_collections()
         return [collection.name for collection in response.collections]
 
-    async def store(self, entry: Entry, *, collection_name: Optional[str] = None):
+    async def store(
+        self,
+        entry: Entry,
+        *,
+        collection_name: Optional[str] = None,
+        point_id: Optional[str] = None,
+    ):
         """
         Store information in the Qdrant collection with collection-specific embedding.
+
+        :param point_id: Optional client-supplied point ID (canonical
+            lowercase hyphenated UUID string — the tool layer validates the
+            form; this connector is a trusting primitive). Default stays a
+            server-minted uuid4 hex, exactly today's behavior.
         """
         collection_name = collection_name or self._default_collection_name
         assert collection_name is not None
@@ -187,12 +198,13 @@ class EnhancedQdrantConnector:
         # Prepare payload
         payload = {"document": entry.content, "metadata": entry.metadata}
 
-        # Store in Qdrant
+        # Store in Qdrant. `is not None` (not `or`): an empty string must
+        # never silently mint a server-side ID.
         await self._client.upsert(
             collection_name=collection_name,
             points=[
                 models.PointStruct(
-                    id=uuid.uuid4().hex,
+                    id=point_id if point_id is not None else uuid.uuid4().hex,
                     vector={vector_name: embeddings[0]},
                     payload=payload,
                 )
@@ -205,6 +217,7 @@ class EnhancedQdrantConnector:
         *,
         collection_name: Optional[str] = None,
         batch_size: int = 100,
+        point_ids: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """
         Store multiple entries efficiently using collection-specific embedding models.
@@ -213,6 +226,10 @@ class EnhancedQdrantConnector:
             entries: List of Entry objects to store
             collection_name: Target collection (uses default if None)
             batch_size: Number of entries to process in each batch
+            point_ids: Optional client-supplied point IDs, parallel to
+                entries (the tool layer validates length/form/uniqueness;
+                this connector is a trusting primitive). None = server-minted
+                uuid4 hex per point, exactly today's behavior.
 
         Returns:
             Dictionary with storage results and statistics
@@ -220,6 +237,12 @@ class EnhancedQdrantConnector:
         collection_name = collection_name or self._default_collection_name
         if not collection_name:
             raise ValueError("Collection name must be specified")
+        # Fail LOUD on a length mismatch: the tool layer validates this, but a
+        # direct caller's mismatch would otherwise surface as an IndexError
+        # INSIDE the per-batch try/except below — i.e. a silent
+        # success=True/stored_count=0 no-op instead of an error.
+        if point_ids is not None and len(point_ids) != len(entries):
+            raise ValueError("point_ids length must match entries length")
 
         if not entries:
             return {"success": True, "stored_count": 0, "batch_count": 0}
@@ -235,11 +258,18 @@ class EnhancedQdrantConnector:
 
         total_stored = 0
         batch_count = 0
+        failed_count = 0
+        failed_point_ids: List[str] = []
 
         # Process entries in batches
         for i in range(0, len(entries), batch_size):
             batch = entries[i : i + batch_size]
             batch_texts = [entry.content for entry in batch]
+            # i is the batch START index, so this slice stays aligned with
+            # the entries slice above; j below indexes within the batch.
+            # `is not None` (matching store()): an empty list must count as
+            # "provided", never silently fall through to server-minted IDs.
+            batch_ids = point_ids[i : i + batch_size] if point_ids is not None else None
 
             try:
                 # Embed all texts in the batch using collection-specific model
@@ -247,13 +277,24 @@ class EnhancedQdrantConnector:
                     batch_texts, collection_name
                 )
 
-                # Prepare points for batch upsert
+                # Prepare points for batch upsert. strict=True: a provider
+                # returning fewer embeddings than texts must fail THIS batch
+                # loudly (and be attributed below) — a silent zip-truncation
+                # would drop trailing documents while over-counting them as
+                # stored.
                 points = []
-                for j, (entry, embedding) in enumerate(zip(batch, embeddings)):
+                for j, (entry, embedding) in enumerate(
+                    zip(batch, embeddings, strict=True)
+                ):
                     payload = {"document": entry.content, "metadata": entry.metadata}
                     points.append(
                         models.PointStruct(
-                            id=uuid.uuid4().hex,  # Keep using UUID for backward compatibility
+                            # batch_ids is None (server-mint) or a full-length
+                            # slice (the entry-time length guard) — the else
+                            # arm only serves the None case.
+                            id=batch_ids[j]
+                            if batch_ids is not None
+                            else uuid.uuid4().hex,
                             vector={vector_name: embedding},
                             payload=payload,
                         )
@@ -269,10 +310,19 @@ class EnhancedQdrantConnector:
 
             except Exception as e:
                 logger.error(f"Batch {batch_count + 1} failed: {e}")
-                # Continue with remaining batches rather than failing completely
+                # Continue with remaining batches rather than failing
+                # completely — but ATTRIBUTE the loss: client-supplied IDs
+                # exist to make retries addressable, so the failed batch's
+                # exact ID slice must be reported, never silently absent.
+                failed_count += len(batch)
+                if batch_ids:
+                    failed_point_ids.extend(batch_ids)
                 continue
 
-        return {
+        result: Dict[str, Any] = {
+            # NOTE: success stays True on partial failure (pre-existing
+            # semantics; consumers compare stored_count vs what they sent,
+            # and the additive failed_* keys below carry the attribution).
             "success": True,
             "stored_count": total_stored,
             "batch_count": batch_count,
@@ -281,6 +331,11 @@ class EnhancedQdrantConnector:
                 collection_name
             ),
         }
+        if failed_count:
+            result["failed_count"] = failed_count
+            if failed_point_ids:
+                result["failed_point_ids"] = failed_point_ids
+        return result
 
     async def search(
         self,

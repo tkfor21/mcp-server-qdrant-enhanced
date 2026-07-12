@@ -144,6 +144,33 @@ and `qdrant_list_collections` / `qdrant_model_mappings` filter their output to
 admitted names. Unset (the shared instance) = none of this applies. The
 per-tool descriptions below describe the unlocked behavior.
 
+### Client-supplied point IDs (`qdrant_store` / `qdrant_bulk_store`)
+
+`qdrant_store` accepts an optional `point_id` and `qdrant_bulk_store` an
+optional `point_ids` list (parallel to `documents`, like `metadata_list`) for
+deterministic addressing — re-storing the same ID overwrites the point
+(idempotent upsert), and `qdrant_get_point`/`qdrant_delete_points` can then
+address points without a search. IDs MUST be **canonical lowercase hyphenated
+UUID strings** — any `str(uuid.UUID(...))`, e.g. `str(uuid.uuid5(namespace,
+key))` or `str(uuid.uuid4())`; other spellings (32-char hex, `urn:uuid:`,
+braces, uppercase) are rejected — Qdrant's local mode keys points by the raw
+string while the server keys by UUID value, so the canonical form is the only
+spelling that round-trips byte-identically on both. Note the deliberate
+asymmetry: a hex ID harvested from `qdrant_find` results (today's
+server-minted form) is **rejected** by `qdrant_store(point_id=…)` — client IDs
+are for keys you derive yourself, not for re-storing server-minted ones.
+Duplicate IDs within one `point_ids` call are rejected (an upsert would
+silently collapse those documents into one point). Omitting the params keeps
+today's server-minted IDs. On partial bulk failure the result stays
+`success: true` but carries additive `failed_count` + `failed_point_ids` keys
+naming exactly which client IDs did not land.
+
+**Read-back-confirm contract:** `qdrant_get_point` reports a missing point as
+an `{"error": "Point X not found", ...}` payload in an `isError=false` result —
+a fail-closed confirm gate MUST check for the absence of the `error` key and
+match `id`/payload content, never treat mere call success as "point exists"
+(that inversion would confirm-and-delete on a miss).
+
 ### Current Implementation
 
 #### qdrant_store
@@ -198,7 +225,7 @@ description="Retrieve a single point by ID for inspection or verification after 
 ```
 
 **Key Features**:
-- Point ID retrieved from `qdrant_find` search results
+- Point ID retrieved from `qdrant_find` search results, OR a client-supplied canonical UUID you stored with (see "Client-supplied point IDs" above)
 - Returns full payload (document + metadata)
 - Read-only operation (no modifications)
 - Useful for verifying updates worked
@@ -300,4 +327,4 @@ qdrant_update_payload(
 
 ---
 
-*Last Updated: December 23, 2025 - Added qdrant_get_point and qdrant_update_payload tools for point retrieval and payload updates*
+*Last Updated: July 12, 2026 - Added the namespace-lock section, client-supplied point IDs (canonical-form contract + read-back-confirm note), and broadened get_point/delete_points ID sourcing*

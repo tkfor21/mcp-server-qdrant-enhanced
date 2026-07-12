@@ -15,6 +15,7 @@ REJECTED (isError=true) and that qdrant_list_collections shows only admitted
 names. Against an UNLOCKED shared endpoint, pass a non-prefix SMOKE_COLLECTION
 (e.g. smoke_roundtrip_test) so the archive namespace isn't polluted.
 """
+import json
 import os
 import re
 import sys
@@ -94,6 +95,59 @@ async def main() -> int:
                 print("[FAIL] stored doc was NOT recalled by the semantic query")
                 return 1
             print("[PASS] semantic round-trip: lexically-different query recalled the stored doc")
+
+            # Client-supplied point-ID round-trip (canonical hyphenated form):
+            # store with an explicit ID, retrieve by that exact string.
+            pid = str(uuid.uuid5(uuid.NAMESPACE_URL, "smoke:point-id-leg"))
+            r3 = await s.call_tool("qdrant_store", {
+                "information": "point-id round-trip probe document",
+                "collection_name": COLL,
+                "point_id": pid,
+            })
+            if getattr(r3, "isError", False):
+                print(f"[FAIL] qdrant_store(point_id=...) errored: {_text(r3)}")
+                return 1
+            r4 = await s.call_tool("qdrant_get_point", {
+                "point_id": pid, "collection_name": COLL,
+            })
+            got = " ".join(_text(r4))
+            if getattr(r4, "isError", False) or "point-id round-trip probe" not in got:
+                print(f"[FAIL] qdrant_get_point({pid}) did not return the stored doc: {got[:200]}")
+                return 1
+            try:
+                parsed = json.loads(_text(r4)[0])
+            except (ValueError, IndexError):
+                print("[FAIL] could not parse qdrant_get_point result as JSON — result shape drifted (not an ID-form problem)")
+                return 1
+            if not isinstance(parsed, dict):
+                print(f"[FAIL] qdrant_get_point returned non-object JSON: {str(parsed)[:80]} — result shape drifted")
+                return 1
+            returned_id = parsed.get("id", "")
+            if returned_id != pid:
+                print(f"[FAIL] returned id {returned_id!r} != stored id {pid!r} (form must round-trip byte-identically)")
+                return 1
+            print("[PASS] client point_id round-trip: stored and retrieved by the same canonical ID")
+
+            # The confirm contract's MISS leg on the real engine: an absent
+            # canonical ID must come back isError=false with an error-key
+            # payload (a confirm gate keys on the error key, never call
+            # success) — and must not carry an "id" that reads as a hit.
+            absent = str(uuid.uuid5(uuid.NAMESPACE_URL, "smoke:absent-probe"))
+            r5 = await s.call_tool("qdrant_get_point", {
+                "point_id": absent, "collection_name": COLL,
+            })
+            if getattr(r5, "isError", False):
+                print(f"[FAIL] get_point(absent) returned isError=true — miss shape drifted: {_text(r5)[:1]}")
+                return 1
+            try:
+                miss = json.loads(_text(r5)[0])
+            except (ValueError, IndexError):
+                print("[FAIL] could not parse get_point(absent) result as JSON")
+                return 1
+            if not isinstance(miss, dict) or "error" not in miss or "not found" not in str(miss.get("error", "")).lower():
+                print(f"[FAIL] get_point(absent) miss shape unexpected: {str(miss)[:150]}")
+                return 1
+            print("[PASS] read-back-confirm miss leg: absent ID -> isError=false with a not-found error payload")
 
             if LOCK_PREFIX:
                 # Pick a probe name guaranteed OUTSIDE the lock prefix (an

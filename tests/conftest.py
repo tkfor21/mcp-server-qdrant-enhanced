@@ -39,9 +39,23 @@ def make_server(
     """
     monkeypatch.setattr(Context, "debug", _noop_debug)
     monkeypatch.setenv("QDRANT_URL", ":memory:")
-    monkeypatch.delenv("COLLECTION_NAME", raising=False)
-    # Auto-create must be ON for seed/store paths to be non-vacuous.
-    monkeypatch.delenv("QDRANT_AUTO_CREATE_COLLECTIONS", raising=False)
+    # Force-delete EVERY behavior-bearing env var the settings models live-read
+    # at construction — an ambient EMBEDDING_PROVIDER=ollama would flip every
+    # harness-built server onto the network-dependent provider, and an ambient
+    # QDRANT_LOCAL_PATH conflicts with the :memory: location outright.
+    for var in (
+        "COLLECTION_NAME",
+        "QDRANT_AUTO_CREATE_COLLECTIONS",  # must be ON (default) for seeds
+        "QDRANT_ENABLE_QUANTIZATION",
+        "QDRANT_API_KEY",
+        "QDRANT_LOCAL_PATH",
+        "QDRANT_SEARCH_LIMIT",
+        "EMBEDDING_PROVIDER",
+        "EMBEDDING_MODEL",
+        "OLLAMA_URL",
+        "OLLAMA_EMBED_MODEL",
+    ):
+        monkeypatch.delenv(var, raising=False)
     for var, value in (
         ("QDRANT_ALLOWED_COLLECTION_PREFIXES", prefixes),
         ("COLLECTION_MODEL_MAPPINGS", env_mappings),

@@ -15,7 +15,7 @@ from mcp_server_qdrant.enhanced_settings import (
     EnhancedQdrantSettings,
 )
 from mcp_server_qdrant.settings import ToolSettings
-from mcp_server_qdrant.validators import is_collection_allowed
+from mcp_server_qdrant.validators import is_collection_allowed, is_valid_point_id
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +121,13 @@ class QdrantMCPServer(FastMCP):
                     description="Optional JSON metadata object to store alongside the document. Can be any valid JSON structure with unlimited nesting. Use for categorization, filtering, and additional context. Example: {'category': 'tutorial', 'tags': ['python'], 'author': {'name': 'John'}}.",
                 ),
             ] = None,  # type: ignore
+            point_id: Annotated[
+                Optional[str],
+                Field(
+                    default=None,
+                    description="Optional client-supplied point ID for deterministic addressing (idempotent upsert: re-storing the same ID overwrites the point). MUST be a canonical lowercase hyphenated UUID string, e.g. str(uuid.uuid5(namespace, key)) — other UUID spellings (hex, urn:, braces, uppercase) are rejected so the stored ID always equals the ID you hold. Omit for a server-minted ID (today's behavior).",
+                ),
+            ] = None,
         ) -> str:
             """
             Store information in Qdrant with collection-specific embedding model.
@@ -129,15 +136,24 @@ class QdrantMCPServer(FastMCP):
             :param information: The text content to store in the vector database. Can be any text content including multi-line text, Unicode characters, and technical documentation. Empty strings are accepted but may not provide useful search results.
             :param collection_name: Name of the Qdrant collection to store the document in. Must contain only alphanumeric characters, underscores, and hyphens (no spaces or special characters). Collections are auto-created with optimal configurations. Collection names trigger automatic model selection: legal/career content uses 1024D models, knowledge-intensive content uses 768D models, technical/debug content uses 384D models.
             :param metadata: Optional JSON metadata object to store alongside the document. Can be any valid JSON structure with unlimited nesting. Use for categorization, filtering, and additional context. Example: {"category": "tutorial", "tags": ["python"], "author": {"name": "John"}}.
+            :param point_id: Optional client-supplied point ID (canonical lowercase hyphenated UUID string only).
             :return: A message indicating that the information was stored.
             """
             _require_allowed_collection(collection_name)
+            if point_id is not None and not is_valid_point_id(point_id):
+                raise ValueError(
+                    f"point_id {point_id!r} is not a canonical UUID string — "
+                    "use the lowercase hyphenated form, e.g. "
+                    "str(uuid.uuid5(namespace, key))"
+                )
             await ctx.debug(
                 f"Enhanced storing information in collection {collection_name}"
             )
 
             entry = Entry(content=information, metadata=metadata)
-            await self.qdrant_connector.store(entry, collection_name=collection_name)
+            await self.qdrant_connector.store(
+                entry, collection_name=collection_name, point_id=point_id
+            )
 
             # Get model info for confirmation
             model_info = (
@@ -373,6 +389,13 @@ class QdrantMCPServer(FastMCP):
                     description="Number of documents to process in each batch for memory and performance optimization. Default is 100. Recommended values: 100-500 for small documents, 10-50 for large documents, 1-10 for memory constrained environments. Affects memory usage and API call frequency.",
                 ),
             ] = 100,
+            point_ids: Annotated[
+                Optional[List[str]],
+                Field(
+                    default=None,
+                    description="Optional list of client-supplied point IDs, parallel to documents (same convention as metadata_list). Each MUST be a canonical lowercase hyphenated UUID string (e.g. str(uuid.uuid5(namespace, key))); duplicates within the list are rejected — an upsert would silently collapse duplicate-ID documents into one point. Omit for server-minted IDs (today's behavior).",
+                ),
+            ] = None,
         ) -> Dict[str, Any]:
             """
             Store multiple documents efficiently in Qdrant with collection-specific embedding.
@@ -382,6 +405,7 @@ class QdrantMCPServer(FastMCP):
             :param collection_name: Name of the Qdrant collection to store documents in. Same validation rules as other collection_name parameters - alphanumeric, underscores, hyphens only. Collection will be auto-created if it doesn't exist with optimal model selection based on name patterns.
             :param metadata_list: Optional list of JSON metadata objects corresponding to each document. If provided, must exactly match the length of the documents list. Each metadata object corresponds to the document at the same index. Can contain any valid JSON structures. Use None for no metadata on any document.
             :param batch_size: Number of documents to process in each batch for memory and performance optimization. Default is 100. Recommended values: 100-500 for small documents, 10-50 for large documents, 1-10 for memory constrained environments. Affects memory usage and API call frequency.
+            :param point_ids: Optional list of client-supplied point IDs, parallel to documents (canonical lowercase hyphenated UUID strings only; no duplicates).
             :return: Storage results with statistics.
             """
             _require_allowed_collection(collection_name)
@@ -391,6 +415,31 @@ class QdrantMCPServer(FastMCP):
 
             if metadata_list and len(metadata_list) != len(documents):
                 raise ValueError("metadata_list length must match documents length")
+            if point_ids is not None:
+                if len(point_ids) != len(documents):
+                    raise ValueError("point_ids length must match documents length")
+                bad = [p for p in point_ids if not is_valid_point_id(p)]
+                if bad:
+                    raise ValueError(
+                        f"point_ids contains non-canonical UUID string(s): "
+                        f"{bad[:3]!r} — use the lowercase hyphenated form, "
+                        "e.g. str(uuid.uuid5(namespace, key))"
+                    )
+                # Uniqueness over the FULL list, before any batching — a
+                # duplicate pair split across batches would still silently
+                # collapse into one upserted point (last write wins).
+                seen: set = set()
+                dupes: set = set()
+                for p in point_ids:
+                    if p in seen:
+                        dupes.add(p)
+                    seen.add(p)
+                if dupes:
+                    raise ValueError(
+                        f"point_ids contains duplicate ID(s): {sorted(dupes)[:3]!r} "
+                        "— an upsert would silently collapse those documents "
+                        "into one point"
+                    )
 
             # Create entries from documents and metadata
             entries = []
@@ -400,7 +449,10 @@ class QdrantMCPServer(FastMCP):
 
             # Execute bulk store operation
             result = await self.qdrant_connector.bulk_store(
-                entries=entries, collection_name=collection_name, batch_size=batch_size
+                entries=entries,
+                collection_name=collection_name,
+                batch_size=batch_size,
+                point_ids=point_ids,
             )
 
             # Add operation context to result
@@ -502,7 +554,7 @@ class QdrantMCPServer(FastMCP):
             point_id: Annotated[
                 str,
                 Field(
-                    description="The point ID (UUID hex string) to retrieve. Get point IDs from qdrant_find search results."
+                    description="The point ID to retrieve: a server-minted hex string (from qdrant_find search results) or a client-supplied canonical UUID string (the point_id you stored with)."
                 ),
             ],
             collection_name: Annotated[
@@ -534,7 +586,7 @@ class QdrantMCPServer(FastMCP):
             point_ids: Annotated[
                 List[str],
                 Field(
-                    description="List of point IDs to update. Get IDs from qdrant_find search results."
+                    description="List of point IDs to update: server-minted hex strings (from qdrant_find search results) or client-supplied canonical UUID strings (the point_ids you stored with)."
                 ),
             ],
             payload: Annotated[
@@ -590,7 +642,7 @@ class QdrantMCPServer(FastMCP):
             point_ids: Annotated[
                 List[str],
                 Field(
-                    description="List of point IDs (UUID hex strings) to delete. Get IDs from qdrant_find search results."
+                    description="List of point IDs to delete: server-minted hex strings (from qdrant_find search results) or client-supplied canonical UUID strings (the point_ids you stored with)."
                 ),
             ],
             collection_name: Annotated[
