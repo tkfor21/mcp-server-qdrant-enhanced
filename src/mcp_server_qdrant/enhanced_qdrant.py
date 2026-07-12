@@ -7,7 +7,7 @@ import sys
 import uuid
 import asyncio
 from typing import Any, Dict, Optional, List
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, field_validator
 from qdrant_client import AsyncQdrantClient, models
 from mcp_server_qdrant.embeddings.enhanced_fastembed import EnhancedFastEmbedProvider
 from mcp_server_qdrant.enhanced_settings import (
@@ -47,13 +47,15 @@ class Entry(BaseModel):
     content: str
     metadata: Optional[Metadata] = None
 
-    @validator("content")
+    @field_validator("content")
+    @classmethod
     def content_must_not_be_empty(cls, v):
         if not v or not v.strip():
             raise ValueError("Content cannot be empty")
         return v.strip()
 
-    @validator("metadata")
+    @field_validator("metadata")
+    @classmethod
     def metadata_must_be_valid(cls, v):
         if v is not None and not validate_metadata(v):
             raise ValueError("Invalid metadata format")
