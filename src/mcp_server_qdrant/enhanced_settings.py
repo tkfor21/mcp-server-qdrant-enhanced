@@ -2,7 +2,7 @@
 Enhanced settings that support multiple embedding models and vector dimensions.
 """
 
-from typing import Dict, Optional, Union
+from typing import Dict, List, Optional, Union
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
 from mcp_server_qdrant.embeddings.types import EmbeddingProviderType
@@ -239,3 +239,24 @@ class EnhancedQdrantSettings(BaseSettings):
         default=200, validation_alias="QDRANT_HNSW_EF_CONSTRUCT"
     )
     hnsw_m: int = Field(default=16, validation_alias="QDRANT_HNSW_M")
+
+    # Enhanced: collection-name prefix allowlist. When set (comma-separated),
+    # every collection-taking tool rejects names outside these prefixes and the
+    # listing/mapping tools filter their output — a namespace lock for a
+    # dedicated endpoint. Unset or empty = disabled (today's behavior).
+    allowed_collection_prefixes: Optional[str] = Field(
+        default=None, validation_alias="QDRANT_ALLOWED_COLLECTION_PREFIXES"
+    )
+
+    def get_allowed_collection_prefixes(self) -> List[str]:
+        """Parsed prefix allowlist: split on commas, strip, drop empties.
+
+        An empty element must never survive the parse — "".startswith("") is
+        True for every name, so a stray "" (e.g. from a trailing comma) would
+        silently disable the lock while it appears armed.
+        """
+        if not self.allowed_collection_prefixes:
+            return []
+        return [
+            p.strip() for p in self.allowed_collection_prefixes.split(",") if p.strip()
+        ]

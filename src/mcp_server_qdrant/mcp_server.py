@@ -15,6 +15,7 @@ from mcp_server_qdrant.enhanced_settings import (
     EnhancedQdrantSettings,
 )
 from mcp_server_qdrant.settings import ToolSettings
+from mcp_server_qdrant.validators import is_collection_allowed
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,15 @@ class QdrantMCPServer(FastMCP):
             # print(f"[ERROR] enhanced_mcp_server.py: setup_tools failed: {type(e).__name__}: {e}", file=sys.stderr)
             raise
 
+        # Surface the lock state at startup so a misconfigured (silently
+        # unlocked) dedicated endpoint is visible at launch, not discoverable
+        # only by the absence of rejections.
+        _prefixes = qdrant_settings.get_allowed_collection_prefixes()
+        if _prefixes:
+            logger.info("collection prefix lock: %s", ",".join(_prefixes))
+        else:
+            logger.info("collection prefix lock: DISABLED")
+
     def format_entry(self, entry: Entry) -> str:
         """Format entry for display."""
         entry_metadata = json.dumps(entry.metadata) if entry.metadata else ""
@@ -74,6 +84,21 @@ class QdrantMCPServer(FastMCP):
 
     def setup_tools(self):
         """Register the enhanced tools in the server."""
+
+        def _require_allowed_collection(collection_name: str) -> None:
+            # The tool layer is the SOLE prefix gate: the connector stays a
+            # trusting primitive (do not add a caller that passes a
+            # None/unchecked collection without going through this guard).
+            # Must run as the FIRST statement of each collection-taking tool —
+            # in particular BEFORE the broad try/except in qdrant_find and
+            # qdrant_collection_info, which would otherwise swallow the raise
+            # into an isError=false result. No-op when the allowlist is unset.
+            prefixes = self.qdrant_settings.get_allowed_collection_prefixes()
+            if not is_collection_allowed(collection_name, prefixes):
+                raise ValueError(
+                    f"Collection {collection_name!r} is not allowed on this "
+                    f"endpoint (allowed prefixes: {', '.join(prefixes)})"
+                )
 
         async def qdrant_store(
             ctx: Context,
@@ -106,6 +131,7 @@ class QdrantMCPServer(FastMCP):
             :param metadata: Optional JSON metadata object to store alongside the document. Can be any valid JSON structure with unlimited nesting. Use for categorization, filtering, and additional context. Example: {"category": "tutorial", "tags": ["python"], "author": {"name": "John"}}.
             :return: A message indicating that the information was stored.
             """
+            _require_allowed_collection(collection_name)
             await ctx.debug(
                 f"Enhanced storing information in collection {collection_name}"
             )
@@ -165,6 +191,9 @@ class QdrantMCPServer(FastMCP):
             :param score_threshold: Minimum similarity score for results (0.0-1.0). Default is 0.0 (return all results regardless of score). Higher values filter out less similar results. Typical useful range is 0.3-0.8 depending on use case.
             :return: Structured search results with metadata.
             """
+            # Guard BEFORE the try below — its broad except would swallow the
+            # rejection into an isError=false error-dict.
+            _require_allowed_collection(collection_name)
             await ctx.debug(
                 f"Enhanced searching in collection {collection_name} for: {query}"
             )
@@ -236,8 +265,11 @@ class QdrantMCPServer(FastMCP):
             await ctx.debug("Listing all collections with enhanced info")
 
             try:
-                collections_info = (
-                    await self.qdrant_connector.list_collections_with_info()
+                # Filter NAMES before any per-collection info fetch (inside the
+                # connector) so a non-admitted name is never fetched or
+                # rendered — not even through the error-entry branch below.
+                collections_info = await self.qdrant_connector.list_collections_with_info(
+                    allowed_prefixes=self.qdrant_settings.get_allowed_collection_prefixes()
                 )
 
                 if not collections_info:
@@ -271,6 +303,9 @@ class QdrantMCPServer(FastMCP):
             :param collection_name: Name of the collection to inspect.
             :return: Detailed collection information.
             """
+            # Guard BEFORE the try below — its broad except would swallow the
+            # rejection into an isError=false error-string.
+            _require_allowed_collection(collection_name)
             await ctx.debug(f"Getting detailed info for collection: {collection_name}")
 
             try:
@@ -349,6 +384,7 @@ class QdrantMCPServer(FastMCP):
             :param batch_size: Number of documents to process in each batch for memory and performance optimization. Default is 100. Recommended values: 100-500 for small documents, 10-50 for large documents, 1-10 for memory constrained environments. Affects memory usage and API call frequency.
             :return: Storage results with statistics.
             """
+            _require_allowed_collection(collection_name)
             await ctx.debug(
                 f"Bulk storing {len(documents)} documents in collection {collection_name}"
             )
@@ -392,10 +428,60 @@ class QdrantMCPServer(FastMCP):
                 EMBEDDING_MODEL_CONFIGS,
             )
 
+            def _merged(raw: str, defaults: Dict[str, Any]) -> Dict[str, Any]:
+                overlay: Dict[str, Any] = {}
+                if raw and raw != "{}":
+                    try:
+                        overlay = json.loads(raw)
+                        if not isinstance(overlay, dict):
+                            # Valid JSON but not an object (e.g. "[1,2]") —
+                            # the settings validator only checks parseability.
+                            overlay = {}
+                    except (TypeError, ValueError):
+                        overlay = {}
+                return {**defaults, **overlay}
+
+            prefixes = self.qdrant_settings.get_allowed_collection_prefixes()
+            if prefixes:
+                # LOCKED endpoint only: dump the effective mappings/configs
+                # (module defaults ∪ env JSON — the same merge
+                # get_model_config_for_collection performs) so the endpoint's
+                # real env-mapped collections appear (the module defaults are
+                # all non-admitted names and would render an empty section),
+                # then filter so no non-admitted collection NAME appears.
+                # (Model-config keys are model names — no lock-relevant info.)
+                # UNLOCKED: keep today's module-constant dump byte-identical —
+                # the merge must not change unlocked output (flag-off no-op).
+                all_mappings = _merged(
+                    self.embedding_provider_settings.collection_model_mappings,
+                    COLLECTION_MODEL_MAPPINGS,
+                )
+                all_configs = _merged(
+                    self.embedding_provider_settings.custom_model_configs,
+                    EMBEDDING_MODEL_CONFIGS,
+                )
+                all_mappings = {
+                    c: m
+                    for c, m in all_mappings.items()
+                    if is_collection_allowed(c, prefixes)
+                }
+            else:
+                all_mappings = dict(COLLECTION_MODEL_MAPPINGS)
+                all_configs = dict(EMBEDDING_MODEL_CONFIGS)
+
             result = "📋 **Collection Model Mappings:**\n\n"
 
-            for collection, model in COLLECTION_MODEL_MAPPINGS.items():
-                config = EMBEDDING_MODEL_CONFIGS.get(model, {})
+            for collection, model in all_mappings.items():
+                # Env JSON is only parse-validated upstream: a mapping VALUE
+                # can be unhashable ([1,2] → TypeError on .get) and a config
+                # VALUE can be a non-dict ("x".get → AttributeError). Render
+                # must fail soft on operator typos, not crash the tool.
+                try:
+                    config = all_configs.get(model, {})
+                except TypeError:
+                    config = {}
+                if not isinstance(config, dict):
+                    config = {}
                 result += f"**{collection}**\n"
                 result += f"   Model: {model}\n"
                 result += f"   Dimensions: {config.get('dimensions', 'unknown')}\n"
@@ -404,7 +490,9 @@ class QdrantMCPServer(FastMCP):
                 )
 
             result += "📚 **Available Model Configs:**\n\n"
-            for model, config in EMBEDDING_MODEL_CONFIGS.items():
+            for model, config in all_configs.items():
+                if not isinstance(config, dict):
+                    config = {}
                 result += f"**{model}**: {config.get('dimensions')}D ({config.get('fastembed_model')})\n"
 
             return result
@@ -429,6 +517,7 @@ class QdrantMCPServer(FastMCP):
             :param collection_name: Name of the collection containing the point.
             :return: Point data including ID, payload (document + metadata), and collection name.
             """
+            _require_allowed_collection(collection_name)
             await ctx.debug(
                 f"Retrieving point {point_id} from collection {collection_name}"
             )
@@ -481,6 +570,7 @@ class QdrantMCPServer(FastMCP):
             :param key: Optional nested path to update within (e.g., 'metadata' to update metadata.field).
             :return: Update result with success status and details.
             """
+            _require_allowed_collection(collection_name)
             await ctx.debug(
                 f"Updating {len(point_ids)} points in collection {collection_name}"
             )
@@ -521,6 +611,7 @@ class QdrantMCPServer(FastMCP):
             :param collection_name: Target collection.
             :return: Deletion result with success status and count.
             """
+            _require_allowed_collection(collection_name)
             await ctx.debug(f"Deleting {len(point_ids)} points from {collection_name}")
 
             result = await self.qdrant_connector.delete_points(

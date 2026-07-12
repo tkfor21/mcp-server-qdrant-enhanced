@@ -38,6 +38,7 @@ Both install the **exact pinned deps from `uv.lock`** (`uv sync --frozen`) — t
 | `MCP_HOST` / `MCP_PORT` | `0.0.0.0` / `10650` | HTTP bind |
 | `MCP_ALLOWED_HOSTS` | — | extra allow-listed `Host` values, comma-separated (e.g. `10.0.0.225:*`) |
 | `FASTEMBED_CUDA` | `false` | set `true` on the GPU image |
+| `QDRANT_ALLOWED_COLLECTION_PREFIXES` | — | collection-name prefix allowlist (comma-separated, e.g. `mld_`) for a dedicated locked endpoint; unset/empty/separators-only = disabled. Supply at deploy time for the dedicated endpoint only — deliberately NOT threaded through the shared compose |
 
 ### Develop & test (no Docker)
 ```bash
@@ -678,6 +679,7 @@ The configuration of the server is done using environment variables:
 | `QDRANT_ENABLE_QUANTIZATION`  | **[Enhanced]** Enable vector quantization for memory optimization   | `true`                                                            |
 | `COLLECTION_MODEL_MAPPINGS`   | **[Enhanced]** JSON mapping of collections to specific embedding models | Auto-configured based on collection names                         |
 | `QDRANT_SEARCH_LIMIT`         | **[Enhanced]** Default maximum search results                       | `10`                                                              |
+| `QDRANT_ALLOWED_COLLECTION_PREFIXES` | **[Enhanced]** Comma-separated collection-name prefix allowlist: collection-taking tools reject other names; listing/mapping tools filter their output. Empty/separators-only = disabled; lock state is logged at startup | None (disabled)                                                   |
 | `QDRANT_HNSW_EF_CONSTRUCT`    | **[Enhanced]** HNSW ef_construct parameter                          | `128`                                                             |
 | `QDRANT_HNSW_M`               | **[Enhanced]** HNSW M parameter                                     | `16`                                                              |
 | `FASTEMBED_CUDA`              | **[New v1.14.1]** Enable CUDA GPU acceleration for embeddings      | `true` (when GPU available)                                       |

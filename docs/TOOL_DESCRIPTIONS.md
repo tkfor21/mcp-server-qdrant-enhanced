@@ -132,6 +132,18 @@ Shows all collections with their embedding models: 1024D BGE-Large (legal/career
 
 ## Enhanced Qdrant MCP Tool Descriptions
 
+### Namespace lock (endpoint-level, affects every collection-taking tool)
+
+When the server is launched with `QDRANT_ALLOWED_COLLECTION_PREFIXES` (a
+dedicated locked endpoint), every collection-taking tool (`qdrant_store`,
+`qdrant_find`, `qdrant_collection_info`, `qdrant_bulk_store`,
+`qdrant_get_point`, `qdrant_update_payload`, `qdrant_delete_points`) rejects a
+`collection_name` outside the allowed prefixes with a tool error —
+`Collection '<name>' is not allowed on this endpoint (allowed prefixes: …)` —
+and `qdrant_list_collections` / `qdrant_model_mappings` filter their output to
+admitted names. Unset (the shared instance) = none of this applies. The
+per-tool descriptions below describe the unlocked behavior.
+
 ### Current Implementation
 
 #### qdrant_store

@@ -24,6 +24,11 @@ services:
       - QDRANT_URL=http://qdrant:6333
       - MCP_TRANSPORT=http
       - MCP_ALLOWED_HOSTS=${MCP_ALLOWED_HOSTS:-}
+      # NOTE: QDRANT_ALLOWED_COLLECTION_PREFIXES (the namespace lock) is
+      # deliberately NOT threaded here — this compose is the SHARED stack and
+      # must stay unlocked. Even a ${VAR:-} passthrough would let a stray shell
+      # export or .env file lock it on restart. A dedicated locked endpoint
+      # gets its own compose override / run command (see README).
       - FASTEMBED_CUDA=false        # GPU host: true
       - QDRANT_AUTO_CREATE_COLLECTIONS=true
       - QDRANT_ENABLE_QUANTIZATION=true

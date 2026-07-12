@@ -81,6 +81,42 @@ def is_valid_collection_name(name: Any) -> TypeGuard[str]:
     )
 
 
+def is_collection_allowed(name: Any, allowed_prefixes: List[str]) -> bool:
+    """
+    Check a collection name against a prefix allowlist.
+
+    An empty/absent allowlist means the lock is disabled (allow all). Falsy
+    elements are dropped defensively before matching — "".startswith("") is
+    True for every name, so an empty prefix must never open the gate even if a
+    parse regression admits one. Matching is case-SENSITIVE by design: Qdrant
+    collection names are case-sensitive, and a lowercase namespace prefix must
+    not admit an uppercase variant (a different physical collection).
+
+    Args:
+        name: Collection name to check
+        allowed_prefixes: Parsed prefix allowlist (may be empty = disabled)
+
+    Returns:
+        True if the name is admitted, False otherwise
+    """
+    if not allowed_prefixes:
+        return True  # unarmed: no allowlist configured
+    prefixes = [p for p in allowed_prefixes if p]
+    if not prefixes:
+        # Armed but degenerate (e.g. [""] from a parse regression): fail
+        # CLOSED — deny, don't silently disarm. "".startswith("") is True for
+        # every name, so admitting the empty prefix would be allow-all.
+        return False
+    return isinstance(name, str) and any(name.startswith(p) for p in prefixes)
+
+
+def filter_allowed_collections(
+    names: List[str], allowed_prefixes: List[str]
+) -> List[str]:
+    """Filter collection names to those the prefix allowlist admits."""
+    return [n for n in names if is_collection_allowed(n, allowed_prefixes)]
+
+
 def validate_search_results(results: List[Any]) -> List[Any]:
     """
     Filter and validate search results, removing invalid entries.

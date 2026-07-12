@@ -186,6 +186,9 @@ ONNX_CUDA_PROVIDERS=CUDAExecutionProvider,TensorrtExecutionProvider
 # HNSW optimization
 QDRANT_HNSW_EF_CONSTRUCT=200
 QDRANT_HNSW_M=16
+
+# Namespace lock (dedicated locked endpoints only; unset on the shared instance)
+QDRANT_ALLOWED_COLLECTION_PREFIXES=mld_
 ```
 
 ### Docker Compose Strategy

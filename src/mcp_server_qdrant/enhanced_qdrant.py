@@ -17,6 +17,7 @@ from mcp_server_qdrant.enhanced_settings import (
     EnhancedQdrantSettings,
 )
 from mcp_server_qdrant.validators import (
+    filter_allowed_collections,
     validate_search_results,
     sanitize_query,
     validate_metadata,
@@ -532,9 +533,22 @@ class EnhancedQdrantConnector:
         except Exception as e:
             return {"error": str(e), "collection_name": collection_name}
 
-    async def list_collections_with_info(self) -> list[Dict[str, Any]]:
-        """List all collections with their detailed information."""
+    async def list_collections_with_info(
+        self, *, allowed_prefixes: Optional[List[str]] = None
+    ) -> list[Dict[str, Any]]:
+        """List all collections with their detailed information.
+
+        Args:
+            allowed_prefixes: When set, filter the collection NAMES before any
+                per-collection info fetch — a non-admitted name must never be
+                fetched or rendered (not even through the error-entry path),
+                and skipping the fetch keeps the listing O(allowed).
+        """
         collection_names = await self.get_collection_names()
+        if allowed_prefixes:
+            collection_names = filter_allowed_collections(
+                collection_names, allowed_prefixes
+            )
         collections_info = []
 
         for name in collection_names:
