@@ -1,0 +1,24 @@
+services:
+  mcp-server-qdrant-http:
+    build:
+      context: .
+      dockerfile: Dockerfile.enhanced.http
+    container_name: my-mcp-server-qdrant-http
+    ports:
+      - "10650:10650"
+    environment:
+      - QDRANT_URL=http://local-qdrant:6333
+      - COLLECTION_NAME=working_solutions_my
+      - QDRANT_AUTO_CREATE_COLLECTIONS=true
+      - QDRANT_ENABLE_QUANTIZATION=true
+      - QDRANT_HNSW_EF_CONSTRUCT=200
+      - QDRANT_HNSW_M=16
+      - EMBEDDING_PROVIDER=fastembed
+      - EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+      - PYTHONUNBUFFERED=1
+      - MCP_PORT=10650
+      - UVICORN_HOST=0.0.0.0
+      - UVICORN_PORT=10650
+    volumes:
+      - ./logs:/app/logs:rw
+    #restart: unless-stopped
