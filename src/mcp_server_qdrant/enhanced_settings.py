@@ -37,6 +37,13 @@ EMBEDDING_MODEL_CONFIGS = {
         "provider": EmbeddingProviderType.FASTEMBED,
         "fastembed_model": "sentence-transformers/all-MiniLM-L6-v2",
     },
+    # Nomic embedding model (768D) - good general-purpose model
+    "nomic-embed-text-v1.5": {
+        "dimensions": 768,
+        "vector_name": "fast-nomic-embed-text-v1.5",
+        "provider": EmbeddingProviderType.FASTEMBED,
+        "fastembed_model": "nomic-ai/nomic-embed-text-v1.5",
+    },
 }
 
 # Collection-specific embedding model mappings - CORRECTED with proper high-dimension models
@@ -177,10 +184,20 @@ class EnhancedEmbeddingProviderSettings(BaseSettings):
             collection_name
         )
         if not model_name:
-            # Fall back to default model
+            # Fall back to default model — derive config from the configured
+            # EMBEDDING_MODEL rather than hardcoding a specific model's values.
+            # Extract short model key from the full fastembed model name
+            # (e.g., "nomic-ai/nomic-embed-text-v1.5" → "nomic-embed-text-v1.5")
+            default_short_name = self.model_name.split("/")[-1]
+            default_config = all_configs.get(default_short_name)
+            if default_config:
+                return {**default_config, "fastembed_model": self.model_name}
+
+            # Ultimate fallback if the default model isn't in configs either —
+            # derive vector name from model name and assume 384D for safety
             return {
                 "dimensions": 384,
-                "vector_name": "all-minilm-l6-v2",
+                "vector_name": f"fast-{default_short_name}",
                 "provider": EmbeddingProviderType.FASTEMBED,
                 "fastembed_model": self.model_name,
             }
@@ -200,12 +217,13 @@ class EnhancedEmbeddingProviderSettings(BaseSettings):
     def get_vector_name_for_collection(self, collection_name: str) -> str:
         """Get the vector name for a collection."""
         config = self.get_model_config_for_collection(collection_name)
-        return config.get("vector_name", "all-minilm-l6-v2")
+        default_vector_name = f"fast-{self.model_name.split('/')[-1]}"
+        return config.get("vector_name", default_vector_name)
 
     def get_dimensions_for_collection(self, collection_name: str) -> int:
         """Get the vector dimensions for a collection."""
         config = self.get_model_config_for_collection(collection_name)
-        return config.get("dimensions", 384)
+        return config.get("dimensions", 768)
 
 
 class EnhancedQdrantSettings(BaseSettings):
